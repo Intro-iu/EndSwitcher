@@ -1,30 +1,35 @@
-# EndSwitcher 终端设备账号管理面板
+# EndSwitcher
 
-EndSwitcher 是一款采用极致「现代废土工业风 (Endfield Style)」设计打造的游戏多账号快速管理与登入工具。以简洁、直接、高科技质感的操作界面，提供安全的本地凭证管理与便捷的网络节点云端无缝同步。
+一款为「明日方舟：终末地」设计打造的游戏多账号快速管理与登入工具。支持本地多账号管理与云端同步 (WebDAV)。
 
-## ✨ 核心特性 / FEATURES
+## Features
 
-* **🛡️ 本地归档与隔离 / Local Isolation**：采用基于操作系统的深层加密机制安全存储您的所有的账号凭证，支持无限数量「别名」建档。
-* **☁️ 网络节点同步 / Cloud Sync**：集成安全、可靠的内建 WebDAV 云端同步模块。无缝联接多设备，随时读取/写入远端凭证档案 (`*.manifest` 校验)。
-* **⚡ 秒级登入 / Rapid Deployment**：化繁为简，无需重输密码。通过预先注入的登录凭据实现「一键式启动游戏，自动完成登入」。
-* **🪐 终末工业风界面 / Industrial UI**：以高对比度、黄色主色调、等高线纹理构建出如同工业终端般的沉浸式体验。搭载实时动态背景反馈、等距网格粒子效果。
-* **📦 单文件独立运行 / Standalone Deployment**：借助 Flutter + Rust 现代跨平台技术构建，被打包输出为单个免安装绿色执行文件。
+* **🛡️ 本地归档**：可以在本地保存所有的账号凭证，支持无限数量「别名」建档。
+* **☁️ 云端同步**：集成 WebDAV 同步功能。无缝联接多设备，随时读取/写入远端凭证文件。
+* **⚡ 秒级登入**：通过登录缓存文件切换实现秒级登入，本过程只涉及登录文件切换，不涉及注入和破解。
+* **📦 单文件运行**：借助 Flutter + Rust 现代化技术构建，打包输出为单个免安装执行文件。
 
-## 🚀 快速起步 / GETTING STARTED
+## Build
+请确保你的设备安装了版本兼容的 Flutter、 Rust 以及 PowerShell 环境。
 
-1.  **启动终端**: 运行 `EndSwitcher_Standalone.exe`
-2.  **网络配置 (可选)**: 进入 `[配置同步]` 界面，输入你的 WebDAV 节点连接信息及路径（默认根目录）并保存。点击同步可随时拉取云端档案。
-3.  **状态查阅**: 在游戏已登录所需账号下，观察主面板右上角的 `ONLINE` 绿标。
-4.  **保存凭证**: 点击主界面的 `[保存凭证]`，为当前状态输入易于识别的别名（如“大号”、“探索小号”）。
-5.  **一键接管**: 当需要切换账号时，在页面下方「账号列表」中选择对应账号点击 `[切换]` 按钮，工具将自动替换本地凭据文件。下次启动游戏即为该账号！
+1. 克隆本仓库并进入
+```powershell
+git clone https://github.com/Intro-iu/EndSwitcher.git
+cd EndSwitcher
+```
 
-## 🛠️ 技术支撑 / TECH STACK
-
-*   **Frontend**: [Flutter](https://flutter.dev/) (Windows Desktop)
-*   **Backend Interface**: [Rust](https://www.rust-lang.org/) (flutter_rust_bridge v2)
-*   **Design Language**: Custom Material-based Industrial UI / Glassmorphism
-*   **Packager**: Warp-packer
+2. 执行编译脚本
+```powershell
+# 产出为项目根目录的 EndSwitcher_Standalone.exe
+.\build.ps1
+```
 
 ---
 
-> _“探索与重启，从选择节点开始。”_ — Endfield Industry
+## ⚠️ 免责声明
+
+本工具仅为个人学习与研究目的而开发，仅用于辅助管理自己的游戏账号。
+
+* **非外挂**：本工具不涉及任何游戏内存修改、代码注入或协议欺骗，仅通过操作本地登录缓存文件实现切换。
+* **风险自负**：使用本工具存在账号被官方检测或封禁的风险。用户需自行承担使用本工具可能带来的一切后果，开发者不承担任何责任。
+* **仅限个人使用**：严禁将本工具用于任何商业用途或非法目的。

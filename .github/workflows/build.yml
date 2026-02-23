@@ -1,0 +1,73 @@
+name: Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build_windows:
+    name: Build Windows Application
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo binstall --no-confirm flutter_rust_bridge_codegen
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build Application using PowerShell script
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EndSwitcher_Standalone
+          path: EndSwitcher_Standalone.exe
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build_windows
+    if: startsWith(github.ref, 'refs/tags/v') # Only run if tag starts with v
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: EndSwitcher_Standalone
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: EndSwitcher_Standalone.exe
+          generate_release_notes: true

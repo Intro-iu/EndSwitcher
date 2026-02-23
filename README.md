@@ -1,6 +1,15 @@
+<div align="center">
+
 # EndSwitcher
 
-一款为「明日方舟：终末地」设计打造的游戏多账号快速管理与登入工具。支持本地多账号管理与云端同步 (WebDAV)。
+一款为「明日方舟：终末地」设计打造的游戏多账号快速管理与登入工具。
+
+<!-- 并排两个截图 -->
+
+<img src="docs/images/EndSwitcher1.png" width="49%"/>
+<img src="docs/images/EndSwitcher2.png" width="49%"/>
+
+</div>
 
 ## Features
 

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -40,6 +40,35 @@ fn get_accounts_dir() -> Result<PathBuf> {
     Ok(path)
 }
 
+fn build_base_url(config: &WebDavConfig) -> Result<String> {
+    let url = config.url.trim().trim_end_matches('/');
+    if url.is_empty() {
+        bail!("WebDAV server URL is required");
+    }
+
+    let path_prefix = config.path.as_deref().unwrap_or("").trim().trim_matches('/');
+    let remote_dir = if path_prefix.is_empty() {
+        "EndSwitcherConfig".to_string()
+    } else {
+        format!("{}/EndSwitcherConfig", path_prefix)
+    };
+
+    Ok(format!("{}/{}/", url, remote_dir))
+}
+
+fn validate_remote_entry_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() || name == "." || name == ".." {
+        bail!("Invalid remote entry name");
+    }
+    if name.chars().any(|c| {
+        c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+    }) {
+        bail!("Invalid remote entry name");
+    }
+    Ok(name.to_string())
+}
+
 pub fn save_webdav_config(config: WebDavConfig) -> anyhow::Result<()> {
     let path = get_config_file_path()?;
     let data = serde_json::to_string_pretty(&config)?;
@@ -66,19 +95,11 @@ pub async fn sync_to_webdav() -> anyhow::Result<()> {
     // 本地结构：accounts/<alias>
     // 远端结构：/webdav_url/EndSwitcherConfig/<alias>
 
-    let remote_dir = format!(
-        "{}{}",
-        config.path.as_deref().unwrap(),
-        "/EndSwitcherConfig"
-    );
-    let base_url = if config.url.ends_with('/') {
-        format!("{}{}/", config.url, remote_dir)
-    } else {
-        format!("{}/{}/", config.url, remote_dir)
-    };
+    let base_url = build_base_url(&config)?;
 
     // 确保远端文件夹存在 (MKCOL)
-    let mkcol_req = client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &base_url);
+    let mkcol_method = reqwest::Method::from_bytes(b"MKCOL").context("Invalid MKCOL method")?;
+    let mkcol_req = client.request(mkcol_method, &base_url);
     let mut mkcol_req = mkcol_req;
     if let Some(pwd) = &config.password {
         mkcol_req = mkcol_req.basic_auth(&config.username, Some(pwd));
@@ -89,7 +110,7 @@ pub async fn sync_to_webdav() -> anyhow::Result<()> {
 
     let accounts = crate::api::endfield::get_account_list()?;
     for acc in accounts {
-        let alias = acc.alias;
+        let alias = validate_remote_entry_name(&acc.alias)?;
         let cache_file = get_accounts_dir()?.join(&alias);
         let file_url = format!("{}{}", base_url, alias);
         let mut req = client.put(&file_url);
@@ -120,12 +141,7 @@ pub async fn sync_to_webdav_with_manifest() -> anyhow::Result<()> {
 
     let config = load_webdav_config()?;
     let client = reqwest::Client::new();
-    let remote_dir = config.path.as_deref().unwrap_or("EndSwitcherBackup");
-    let base_url = if config.url.ends_with('/') {
-        format!("{}{}/", config.url, remote_dir)
-    } else {
-        format!("{}/{}/", config.url, remote_dir)
-    };
+    let base_url = build_base_url(&config)?;
 
     // 生成 manifest
     let accounts = crate::api::endfield::get_account_list()?;
@@ -151,16 +167,7 @@ pub async fn sync_to_webdav_with_manifest() -> anyhow::Result<()> {
 pub async fn sync_from_webdav() -> anyhow::Result<()> {
     let config = load_webdav_config()?;
     let client = reqwest::Client::new();
-    let remote_dir = format!(
-        "{}{}",
-        config.path.as_deref().unwrap(),
-        "/EndSwitcherConfig"
-    );
-    let base_url = if config.url.ends_with('/') {
-        format!("{}{}/", config.url, remote_dir)
-    } else {
-        format!("{}/{}/", config.url, remote_dir)
-    };
+    let base_url = build_base_url(&config)?;
 
     // 1. 发送 PROPFIND 请求获取目录下所有文件
     let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -170,8 +177,9 @@ pub async fn sync_from_webdav() -> anyhow::Result<()> {
   </D:prop>
 </D:propfind>"#;
 
+    let propfind_method = reqwest::Method::from_bytes(b"PROPFIND").context("Invalid PROPFIND method")?;
     let mut req = client
-        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &base_url)
+        .request(propfind_method, &base_url)
         .header("Depth", "1")
         .header("Content-Type", "text/xml")
         .body(propfind_body);
@@ -231,9 +239,11 @@ pub async fn sync_from_webdav() -> anyhow::Result<()> {
                             if !filename.is_empty() && filename != "accounts.json" {
                                 // 进行 URL 解码（如果目录包含中文等）
                                 if let Ok(decoded) = urlencoding::decode(filename) {
-                                    files_to_download.push(decoded.into_owned());
-                                } else {
-                                    files_to_download.push(filename.to_string());
+                                    if let Ok(safe_name) = validate_remote_entry_name(&decoded) {
+                                        files_to_download.push(safe_name);
+                                    }
+                                } else if let Ok(safe_name) = validate_remote_entry_name(filename) {
+                                    files_to_download.push(safe_name);
                                 }
                             }
                         }

@@ -106,9 +106,26 @@ class _DashboardPageState extends State<DashboardPage> {
                 EndfieldButton(
                   label: '确认删除',
                   icon: Icons.delete_forever,
-                  onPressed: () {
-                    appState.delete(alias);
+                  onPressed: () async {
                     Navigator.pop(context);
+                    try {
+                      await appState.delete(alias);
+                      if (context.mounted) {
+                        showEndfieldSnackBar(
+                          context,
+                          '账号 "$alias" 已删除',
+                          isError: false,
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        showEndfieldSnackBar(
+                          context,
+                          e.toString(),
+                          isError: true,
+                        );
+                      }
+                    }
                   },
                 ),
               ],

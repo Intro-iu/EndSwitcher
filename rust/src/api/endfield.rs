@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -48,7 +48,24 @@ fn get_accounts_dir() -> Result<PathBuf> {
     Ok(path)
 }
 
+fn validate_alias(alias: &str) -> Result<&str> {
+    let alias = alias.trim();
+    if alias.is_empty() {
+        bail!("Alias cannot be empty");
+    }
+    if alias == "." || alias == ".." {
+        bail!("Alias is invalid");
+    }
+    if alias.chars().any(|c| {
+        c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+    }) {
+        bail!("Alias contains invalid characters");
+    }
+    Ok(alias)
+}
+
 fn get_account_cache_file(alias: &str) -> Result<PathBuf> {
+    let alias = validate_alias(alias)?;
     Ok(get_accounts_dir()?.join(alias))
 }
 

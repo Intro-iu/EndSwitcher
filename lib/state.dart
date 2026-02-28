@@ -49,7 +49,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> delete(String alias) async {
-    await deleteAccount(alias: alias);
-    await loadAccounts();
+    try {
+      await deleteAccount(alias: alias);
+      await loadAccounts();
+    } catch (e) {
+      throw Exception('删除失败: $e');
+    }
   }
 }

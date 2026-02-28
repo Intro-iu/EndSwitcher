@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `get_accounts_dir`, `get_config_file_path`
+// These functions are ignored because they are not marked as `pub`: `build_base_url`, `get_accounts_dir`, `get_config_file_path`, `validate_remote_entry_name`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
 
 Future<void> saveWebdavConfig({required WebDavConfig config}) =>

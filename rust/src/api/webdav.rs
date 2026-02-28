@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use directories::BaseDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebDavConfig {
@@ -14,8 +14,12 @@ pub struct WebDavConfig {
 
 fn get_config_file_path() -> Result<PathBuf> {
     let base_dirs = BaseDirs::new().context("Could not find base directories")?;
-    let path = base_dirs.home_dir().join("AppData").join("Roaming").join("EndSwitcher");
-    
+    let path = base_dirs
+        .home_dir()
+        .join("AppData")
+        .join("Roaming")
+        .join("EndSwitcher");
+
     if !path.exists() {
         fs::create_dir_all(&path)?;
     }
@@ -24,7 +28,12 @@ fn get_config_file_path() -> Result<PathBuf> {
 
 fn get_accounts_dir() -> Result<PathBuf> {
     let base_dirs = BaseDirs::new().context("Could not find base directories")?;
-    let path = base_dirs.home_dir().join("AppData").join("Roaming").join("EndSwitcher").join("accounts");
+    let path = base_dirs
+        .home_dir()
+        .join("AppData")
+        .join("Roaming")
+        .join("EndSwitcher")
+        .join("accounts");
     if !path.exists() {
         fs::create_dir_all(&path)?;
     }
@@ -53,18 +62,21 @@ pub fn load_webdav_config() -> anyhow::Result<WebDavConfig> {
 pub async fn sync_to_webdav() -> anyhow::Result<()> {
     let config = load_webdav_config()?;
     let client = reqwest::Client::new();
-    
-    // 我们采取简单的策略：把本地的 accounts 目录下的资料逐个上传。
-    // 由于只有一级 alias 和 login_cache，结构非常简单：
-    // /webdav_url/EndSwitcherBackup/<alias>/login_cache
-    
-    let remote_dir = config.path.as_deref().unwrap_or("EndSwitcherBackup");
+
+    // 本地结构：accounts/<alias>
+    // 远端结构：/webdav_url/EndSwitcherConfig/<alias>
+
+    let remote_dir = format!(
+        "{}{}",
+        config.path.as_deref().unwrap(),
+        "/EndSwitcherConfig"
+    );
     let base_url = if config.url.ends_with('/') {
         format!("{}{}/", config.url, remote_dir)
     } else {
         format!("{}/{}/", config.url, remote_dir)
     };
-    
+
     // 确保远端文件夹存在 (MKCOL)
     let mkcol_req = client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &base_url);
     let mut mkcol_req = mkcol_req;
@@ -74,43 +86,25 @@ pub async fn sync_to_webdav() -> anyhow::Result<()> {
         mkcol_req = mkcol_req.basic_auth(&config.username, None::<&str>);
     }
     let _ = mkcol_req.send().await; // 忽略错误，可能远端已经存在文件夹
-    
-    let accounts_dir = get_accounts_dir()?;
-    for entry in fs::read_dir(accounts_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(alias) = path.file_name().and_then(|n| n.to_str()) {
-                let cache_file = path.join("login_cache");
-                if cache_file.exists() {
-                    // Mkcol for this alias
-                    let alias_url = format!("{}{}/", base_url, alias);
-                    let mut req = client.request(reqwest::Method::from_bytes(b"MKCOL").unwrap(), &alias_url);
-                    if let Some(pwd) = &config.password {
-                        req = req.basic_auth(&config.username, Some(pwd));
-                    } else if !config.username.is_empty() {
-                        req = req.basic_auth(&config.username, None::<&str>);
-                    }
-                    let _ = req.send().await;
-                    
-                    // Put login_cache
-                    let file_url = format!("{}login_cache", alias_url);
-                    let mut req = client.put(&file_url);
-                    if let Some(pwd) = &config.password {
-                        req = req.basic_auth(&config.username, Some(pwd));
-                    } else if !config.username.is_empty() {
-                        req = req.basic_auth(&config.username, None::<&str>);
-                    }
-                    
-                    let file_data = fs::read(&cache_file)?;
-                    let res = req.body(file_data).send().await?;
-                    if !res.status().is_success() {
-                        let status = res.status();
-                        let text = res.text().await.unwrap_or_default();
-                        anyhow::bail!("Failed to upload {}: {} - {}", alias, status, text);
-                    }
-                }
-            }
+
+    let accounts = crate::api::endfield::get_account_list()?;
+    for acc in accounts {
+        let alias = acc.alias;
+        let cache_file = get_accounts_dir()?.join(&alias);
+        let file_url = format!("{}{}", base_url, alias);
+        let mut req = client.put(&file_url);
+        if let Some(pwd) = &config.password {
+            req = req.basic_auth(&config.username, Some(pwd));
+        } else if !config.username.is_empty() {
+            req = req.basic_auth(&config.username, None::<&str>);
+        }
+
+        let file_data = fs::read(&cache_file)?;
+        let res = req.body(file_data).send().await?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to upload {}: {} - {}", alias, status, text);
         }
     }
     Ok(())
@@ -123,7 +117,7 @@ pub async fn sync_to_webdav() -> anyhow::Result<()> {
 pub async fn sync_to_webdav_with_manifest() -> anyhow::Result<()> {
     // 调用前面的同步
     sync_to_webdav().await?;
-    
+
     let config = load_webdav_config()?;
     let client = reqwest::Client::new();
     let remote_dir = config.path.as_deref().unwrap_or("EndSwitcherBackup");
@@ -132,11 +126,11 @@ pub async fn sync_to_webdav_with_manifest() -> anyhow::Result<()> {
     } else {
         format!("{}/{}/", config.url, remote_dir)
     };
-    
+
     // 生成 manifest
     let accounts = crate::api::endfield::get_account_list()?;
     let manifest_str = serde_json::to_string(&accounts)?;
-    
+
     // Put manifest
     let manifest_url = format!("{}accounts.json", base_url);
     let mut req = client.put(&manifest_url);
@@ -145,64 +139,134 @@ pub async fn sync_to_webdav_with_manifest() -> anyhow::Result<()> {
     } else if !config.username.is_empty() {
         req = req.basic_auth(&config.username, None::<&str>);
     }
-    
+
     let res = req.body(manifest_str).send().await?;
     if !res.status().is_success() {
         anyhow::bail!("Failed to upload manifest");
     }
-    
+
     Ok(())
 }
 
 pub async fn sync_from_webdav() -> anyhow::Result<()> {
     let config = load_webdav_config()?;
     let client = reqwest::Client::new();
-    let remote_dir = config.path.as_deref().unwrap_or("EndSwitcherBackup");
+    let remote_dir = format!(
+        "{}{}",
+        config.path.as_deref().unwrap(),
+        "/EndSwitcherConfig"
+    );
     let base_url = if config.url.ends_with('/') {
         format!("{}{}/", config.url, remote_dir)
     } else {
         format!("{}/{}/", config.url, remote_dir)
     };
-    
-    // 先获取 manifest
-    let manifest_url = format!("{}accounts.json", base_url);
-    let mut req = client.get(&manifest_url);
+
+    // 1. 发送 PROPFIND 请求获取目录下所有文件
+    let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:resourcetype/>
+  </D:prop>
+</D:propfind>"#;
+
+    let mut req = client
+        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &base_url)
+        .header("Depth", "1")
+        .header("Content-Type", "text/xml")
+        .body(propfind_body);
+
     if let Some(pwd) = &config.password {
         req = req.basic_auth(&config.username, Some(pwd));
     } else if !config.username.is_empty() {
         req = req.basic_auth(&config.username, None::<&str>);
     }
-    
+
     let res = req.send().await?;
     if !res.status().is_success() {
-        anyhow::bail!("Failed to download manifest: cloud backup might not exist");
+        anyhow::bail!("Failed to execute PROPFIND on WebDAV server. Check path or permissions.");
     }
-    
-    let manifest_str = res.text().await?;
-    let accounts: Vec<crate::api::endfield::AccountInfo> = serde_json::from_str(&manifest_str)?;
-    
+
+    let xml_response = res.text().await?;
+
+    // 2. 解析 XML 提取所有文件路径 (排除目录)
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::from_str(&xml_response);
+    reader.trim_text(true);
+
+    let mut in_href = false;
+    let mut in_collection = false;
+    let mut current_href = String::new();
+    let mut buf = Vec::new();
+    let mut files_to_download = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let name = e.name();
+                let name_ref = name.as_ref();
+                if name_ref == b"D:href" || name_ref == b"href" {
+                    in_href = true;
+                } else if name_ref == b"D:collection" || name_ref == b"collection" {
+                    in_collection = true;
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if in_href {
+                    current_href = e.unescape()?.into_owned();
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name = e.name();
+                let name_ref = name.as_ref();
+                if name_ref == b"D:href" || name_ref == b"href" {
+                    in_href = false;
+                } else if name_ref == b"D:response" || name_ref == b"response" {
+                    // 如果是一个文件（不是 collection），且不是当前目录（通常以 / 结尾或等同于 base_url）
+                    if !in_collection && !current_href.ends_with('/') {
+                        // 从 href 提取文件名
+                        if let Some(filename) = current_href.split('/').last() {
+                            if !filename.is_empty() && filename != "accounts.json" {
+                                // 进行 URL 解码（如果目录包含中文等）
+                                if let Ok(decoded) = urlencoding::decode(filename) {
+                                    files_to_download.push(decoded.into_owned());
+                                } else {
+                                    files_to_download.push(filename.to_string());
+                                }
+                            }
+                        }
+                    }
+                    in_collection = false;
+                    current_href.clear();
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => anyhow::bail!("XML parse error: {:?}", e),
+            _ => (),
+        }
+        buf.clear();
+    }
+
     let accounts_dir = get_accounts_dir()?;
-    
-    // 挨个下载
-    for acc in accounts {
-        let file_url = format!("{}{}/login_cache", base_url, acc.alias);
+
+    // 3. 挨个下载文件
+    for filename in files_to_download {
+        let file_url = format!("{}{}", base_url, urlencoding::encode(&filename));
         let mut req = client.get(&file_url);
         if let Some(pwd) = &config.password {
             req = req.basic_auth(&config.username, Some(pwd));
         } else if !config.username.is_empty() {
             req = req.basic_auth(&config.username, None::<&str>);
         }
-        
+
         let res = req.send().await?;
         if res.status().is_success() {
             let data = res.bytes().await?;
-            let target_dir = accounts_dir.join(&acc.alias);
-            if !target_dir.exists() {
-                fs::create_dir_all(&target_dir)?;
-            }
-            fs::write(target_dir.join("login_cache"), data)?;
+            fs::write(accounts_dir.join(&filename), data)?;
         }
     }
-    
+
     Ok(())
 }

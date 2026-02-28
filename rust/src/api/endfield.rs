@@ -48,6 +48,10 @@ fn get_accounts_dir() -> Result<PathBuf> {
     Ok(path)
 }
 
+fn get_account_cache_file(alias: &str) -> Result<PathBuf> {
+    Ok(get_accounts_dir()?.join(alias))
+}
+
 // 查找当前游戏内的 login_cache 文件所在的路径
 pub fn find_login_cache_path() -> Result<String> {
     let endfield_dir = get_endfield_dir()?;
@@ -78,22 +82,19 @@ pub fn get_account_list() -> anyhow::Result<Vec<AccountInfo>> {
     for entry in fs::read_dir(accounts_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
+        if path.is_file() {
             if let Some(alias) = path.file_name().and_then(|n| n.to_str()) {
-                let cache_file = path.join("login_cache");
-                if cache_file.exists() {
-                    let metadata = fs::metadata(&cache_file)?;
-                    let updated_at = metadata.modified()
-                        .unwrap_or_else(|_| SystemTime::now())
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs() as i64;
-                        
-                    accounts.push(AccountInfo {
-                        alias: alias.to_string(),
-                        updated_at,
-                    });
-                }
+                let metadata = fs::metadata(&path)?;
+                let updated_at = metadata.modified()
+                    .unwrap_or_else(|_| SystemTime::now())
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                accounts.push(AccountInfo {
+                    alias: alias.to_string(),
+                    updated_at,
+                });
             }
         }
     }
@@ -105,13 +106,7 @@ pub fn get_account_list() -> anyhow::Result<Vec<AccountInfo>> {
 /// 保存当前登录的账号
 pub fn save_current_account(alias: String) -> anyhow::Result<()> {
     let current_cache = find_login_cache_path()?;
-    let target_dir = get_accounts_dir()?.join(&alias);
-    
-    if !target_dir.exists() {
-        fs::create_dir_all(&target_dir)?;
-    }
-    
-    let target_file = target_dir.join("login_cache");
+    let target_file = get_account_cache_file(&alias)?;
     fs::copy(&current_cache, &target_file)?;
     Ok(())
 }
@@ -139,22 +134,22 @@ pub fn switch_to_account(alias: String) -> anyhow::Result<()> {
     let target_game_sdk_dir = target_game_sdk_dir
         .context("No sdk_data_* directory found in game folder. Please start the game at least once.")?;
         
-    let saved_cache = get_accounts_dir()?.join(&alias).join("login_cache");
-    if !saved_cache.exists() {
+    let source_cache = get_account_cache_file(&alias)?;
+    if !(source_cache.exists() && source_cache.is_file()) {
         anyhow::bail!("Saved account not found");
     }
     
     let game_cache_file = target_game_sdk_dir.join("login_cache");
-    fs::copy(&saved_cache, &game_cache_file)?;
+    fs::copy(&source_cache, &game_cache_file)?;
     
     Ok(())
 }
 
 /// 删除指定账号
 pub fn delete_account(alias: String) -> anyhow::Result<()> {
-    let target_dir = get_accounts_dir()?.join(&alias);
-    if target_dir.exists() {
-        fs::remove_dir_all(&target_dir)?;
+    let target_file = get_account_cache_file(&alias)?;
+    if target_file.exists() && target_file.is_file() {
+        fs::remove_file(&target_file)?;
     }
     Ok(())
 }

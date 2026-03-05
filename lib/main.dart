@@ -8,6 +8,11 @@ import 'ui/dashboard.dart';
 import 'ui/webdav.dart';
 import 'ui/components.dart';
 
+const String kAppBuildLabel = String.fromEnvironment(
+  'APP_BUILD_LABEL',
+  defaultValue: '1.0.0',
+);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
@@ -98,7 +103,7 @@ class _MainShellState extends State<MainShell> {
                                     ),
                               ),
                               Text(
-                                'SYS.VERSION 1.0.1',
+                                'SYS.VERSION $kAppBuildLabel',
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(color: EndfieldColors.primary),
                               ),

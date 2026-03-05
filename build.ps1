@@ -1,15 +1,17 @@
 param (
-    [switch]$SkipBuild = $false
+    [switch]$SkipBuild = $false,
+    [string]$BuildLabel = "1.0.0"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $SkipBuild) {
     Write-Host "=> Building Flutter Windows Application (Release Mode)..." -ForegroundColor Cyan
+    Write-Host "=> Build label: $BuildLabel" -ForegroundColor Cyan
     # Ensure rust and dart bindings are up to date
     flutter_rust_bridge_codegen generate
     # Build windows executable
-    flutter build windows --release
+    flutter build windows --release --dart-define=APP_BUILD_LABEL=$BuildLabel
 }
 
 $flutterOut = "build\windows\x64\runner\Release"

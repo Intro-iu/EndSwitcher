@@ -3,12 +3,15 @@ name: Build & Release
 on:
   push:
     branches:
-      - main
+      - '**'
     tags:
       - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
   pull_request:
     branches:
       - main
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 jobs:
@@ -41,9 +44,25 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Resolve build label
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            label="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            label="${{ github.ref_name }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            label="pr-${{ github.event.number }}-${GITHUB_SHA::7}"
+          else
+            label="commit-${GITHUB_SHA::7}"
+          fi
+          echo "build_label=$label" >> "$GITHUB_OUTPUT"
+          echo "Build label: $label"
+
       - name: Build Application using PowerShell script
         shell: pwsh
-        run: .\build.ps1
+        run: .\build.ps1 -BuildLabel "${{ steps.meta.outputs.build_label }}"
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -55,7 +74,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build_windows
-    if: startsWith(github.ref, 'refs/tags/v') # Only run if tag starts with v
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') # Only run on tag push
     runs-on: ubuntu-latest
     permissions:
       contents: write
